@@ -203,40 +203,90 @@ class GameClient:
             return None
 
     def display_stats(self, data: dict):
-        """Afficher les stats du serveur de manière élégante"""
-        box(
-            f"{C.CYAN}📊 STATISTIQUES DU SERVEUR{C.RESET}",
-            f"⏱️  Uptime              : {data['uptime']}s\n"
-            f"👥 Clients actifs      : {data['active_clients']}\n"
-            f"📈 Total servi         : {data['total_served']}\n"
-            f"🎮 Parties jouées      : {data['total_games']}\n"
-            f"🏆 Meilleur (tentatives): {data['best_attempts']}\n"
-            f"📊 Moyenne tentatives  : {data['avg_attempts']:.1f}",
-            C.CYAN
-        )
+        """Afficher les stats du serveur de manière élégante et dynamique"""
+        # Conversion de l'uptime en format lisible
+        uptime_sec = data['uptime']
+        hours = uptime_sec // 3600
+        minutes = (uptime_sec % 3600) // 60
+        seconds = uptime_sec % 60
+        uptime_str = f"{hours:02d}h {minutes:02d}m {seconds:02d}s"
+
+        # Création d'une barre de progression pour la moyenne de tentatives
+        avg = data['avg_attempts']
+        max_attempts = 20  # Max pour la visualisation
+        bar_length = int((avg / max_attempts) * 20) if avg < max_attempts else 20
+        bar = f"{C.GREEN}{'█' * bar_length}{C.GRAY}{'░' * (20 - bar_length)}{C.RESET}"
+
+        print(f"\n{C.CYAN}{C.BOLD}╔{'═' * 62}╗{C.RESET}")
+        print(f"{C.CYAN}{C.BOLD}║{C.RESET} {C.FIRE} {'STATISTIQUES DU SERVEUR':^56} {C.FIRE} {C.CYAN}{C.BOLD}║{C.RESET}")
+        print(f"{C.CYAN}{C.BOLD}╠{'═' * 62}╣{C.RESET}")
+
+        # Ligne 1 : Uptime et Clients actifs
+        print(f"{C.CYAN}║{C.RESET}  {C.YELLOW}⏱️  Uptime{C.RESET}              : {C.BOLD}{uptime_str}{C.RESET}                  {C.CYAN}║{C.RESET}")
+        print(f"{C.CYAN}║{C.RESET}  {C.GREEN}👥 Clients actifs{C.RESET}      : {C.BOLD}{data['active_clients']}{C.RESET}                                 {C.CYAN}║{C.RESET}")
+        print(f"{C.CYAN}║{C.RESET}  {C.BLUE}📈 Total servi{C.RESET}         : {C.BOLD}{data['total_served']}{C.RESET}                                 {C.CYAN}║{C.RESET}")
+        print(f"{C.CYAN}║{C.RESET}  {C.PURPLE}🎮 Parties jouées{C.RESET}      : {C.BOLD}{data['total_games']}{C.RESET}                                 {C.CYAN}║{C.RESET}")
+
+        best = data['best_attempts'] if data['best_attempts'] != 0 else "Aucun"
+        print(f"{C.CYAN}║{C.RESET}  {C.ORANGE}🏆 Meilleur (tentatives){C.RESET}: {C.BOLD}{best}{C.RESET}                             {C.CYAN}║{C.RESET}")
+
+        print(f"{C.CYAN}║{C.RESET}  {C.PINK}📊 Moyenne tentatives{C.RESET}  : {C.BOLD}{avg:.1f}{C.RESET}                              {C.CYAN}║{C.RESET}")
+        print(f"{C.CYAN}║{C.RESET}     {bar}                                {C.CYAN}║{C.RESET}")
+        print(f"{C.CYAN}{C.BOLD}╚{'═' * 62}╝{C.RESET}\n")
 
     def display_leaderboard(self, data: dict):
-        """Afficher le leaderboard avec un beau tableau"""
+        """Afficher le leaderboard avec un tableau ultra-moderne et dynamique"""
         if data['count'] == 0:
-            print(f"{C.GRAY}Aucun score enregistré{C.RESET}\n")
+            print(f"\n{C.GRAY}{C.DIM}┌{'─' * 60}┐{C.RESET}")
+            print(f"{C.GRAY}{C.DIM}│{'Aucun score enregistré':^60}│{C.RESET}")
+            print(f"{C.GRAY}{C.DIM}└{'─' * 60}┘{C.RESET}\n")
             return
 
-        print(f"\n{C.YELLOW}{C.BOLD}{C.TROPHY} TOP {data['count']} MEILLEURS SCORES {C.TROPHY}{C.RESET}\n")
+        print(f"\n{C.YELLOW}{C.BOLD}{'═' * 70}{C.RESET}")
+        print(f"{C.YELLOW}{C.BOLD} {C.TROPHY}  TOP {data['count']} MEILLEURS SCORES - HALL OF FAME  {C.TROPHY}{C.RESET}")
+        print(f"{C.YELLOW}{C.BOLD}{'═' * 70}{C.RESET}\n")
 
-        headers = ['🏅 Rang', 'Joueur', 'Score', 'Essais', 'Temps']
-        rows = []
+        # En-tête du tableau
+        print(f"{C.YELLOW}{C.BOLD}╔{'═' * 5}╦{'═' * 15}╦{'═' * 12}╦{'═' * 10}╦{'═' * 11}╗{C.RESET}")
+        print(f"{C.YELLOW}{C.BOLD}║{C.RESET} {'🏅':^3} {C.YELLOW}{C.BOLD}║{C.RESET} {'Joueur':^13} {C.YELLOW}{C.BOLD}║{C.RESET} {'Score':^10} {C.YELLOW}{C.BOLD}║{C.RESET} {'Essais':^8} {C.YELLOW}{C.BOLD}║{C.RESET} {'Temps':^9} {C.YELLOW}{C.BOLD}║{C.RESET}")
+        print(f"{C.YELLOW}{C.BOLD}╠{'═' * 5}╬{'═' * 15}╬{'═' * 12}╬{'═' * 10}╬{'═' * 11}╣{C.RESET}")
 
+        # Lignes du tableau avec couleurs dynamiques
         for score in data['scores']:
-            medal = C.MEDAL if score['rank'] == 1 else '🥈' if score['rank'] == 2 else '🥉' if score['rank'] == 3 else f"#{score['rank']}"
-            rows.append([
-                medal,
-                score['name'],
-                f"{score['score']} pts",
-                score['attempts'],
-                f"{score['duration']}s"
-            ])
+            rank = score['rank']
 
-        table(headers, rows, C.YELLOW)
+            # Médaille et couleur selon le rang
+            if rank == 1:
+                medal = C.MEDAL
+                color = C.YELLOW
+            elif rank == 2:
+                medal = '🥈'
+                color = C.GRAY
+            elif rank == 3:
+                medal = '🥉'
+                color = C.ORANGE
+            else:
+                medal = f"#{rank}"
+                color = C.RESET
+
+            # Barre de visualisation du score
+            score_val = score['score']
+            max_score = 10000
+            bar_length = int((score_val / max_score) * 8)
+            score_bar = f"{C.GREEN}{'█' * bar_length}{C.GRAY}{'░' * (8 - bar_length)}{C.RESET}"
+
+            # Affichage de la ligne
+            print(f"{C.YELLOW}║{C.RESET} {medal:^3} {C.YELLOW}║{C.RESET} {color}{C.BOLD}{score['name']:^13}{C.RESET} {C.YELLOW}║{C.RESET} {C.GREEN}{C.BOLD}{score_val:>6}{C.RESET} pts {C.YELLOW}║{C.RESET} {C.CYAN}{score['attempts']:^8}{C.RESET} {C.YELLOW}║{C.RESET} {C.PURPLE}{score['duration']:>5}s{C.RESET}   {C.YELLOW}║{C.RESET}")
+
+            # Barre de visualisation
+            if rank <= 3:
+                print(f"{C.YELLOW}║{C.RESET}     {C.YELLOW}║{C.RESET}               {C.YELLOW}║{C.RESET} {score_bar}  {C.YELLOW}║{C.RESET}          {C.YELLOW}║{C.RESET}           {C.YELLOW}║{C.RESET}")
+
+            # Séparateur entre les lignes (sauf dernière)
+            if rank < data['count']:
+                print(f"{C.YELLOW}╠{'─' * 5}╬{'─' * 15}╬{'─' * 12}╬{'─' * 10}╬{'─' * 11}╣{C.RESET}")
+
+        print(f"{C.YELLOW}{C.BOLD}╚{'═' * 5}╩{'═' * 15}╩{'═' * 12}╩{'═' * 10}╩{'═' * 11}╝{C.RESET}\n")
 
     def play_game(self) -> bool:
         """Boucle de jeu principale"""
