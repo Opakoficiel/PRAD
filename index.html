@@ -490,6 +490,31 @@
                 }
             }
 
+            @keyframes pulse {
+                0% {
+                    transform: scale(1);
+                }
+                50% {
+                    transform: scale(1.2);
+                }
+                100% {
+                    transform: scale(1);
+                }
+            }
+
+            @keyframes shake {
+                0%,
+                100% {
+                    transform: translateX(0);
+                }
+                25% {
+                    transform: translateX(-10px);
+                }
+                75% {
+                    transform: translateX(10px);
+                }
+            }
+
             /* ============================================================
          * RESPONSIVE PERFECTIONNÉ
          * ============================================================ */
@@ -745,8 +770,9 @@
                 }
 
                 container.style.display = "block";
+                container.style.animation = "slideIn 0.5s ease";
 
-                data.scores.forEach((score) => {
+                data.scores.forEach((score, index) => {
                     const medal =
                         score.rank === 1
                             ? "🥇"
@@ -755,13 +781,35 @@
                               : score.rank === 3
                                 ? "🥉"
                                 : `#${score.rank}`;
+
+                    // Calculer la barre de progression du score
+                    const maxScore = 10000;
+                    const scorePercentage = (score.score / maxScore) * 100;
+
                     const row = tbody.insertRow();
+                    row.style.animationDelay = `${index * 0.1}s`;
+
+                    // Couleur de fond selon le rang
+                    let bgColor = "#f8f9fa";
+                    if (score.rank === 1) bgColor = "#fff9e6";
+                    else if (score.rank === 2) bgColor = "#f5f5f5";
+                    else if (score.rank === 3) bgColor = "#fff5f0";
+
+                    row.style.background = bgColor;
+
                     row.innerHTML = `
-                    <td>${medal}</td>
-                    <td><strong>${score.name}</strong></td>
-                    <td>${score.score} pts</td>
-                    <td>${score.attempts}</td>
-                    <td>${score.duration}s</td>
+                    <td style="font-size: 1.3rem;">${medal}</td>
+                    <td><strong style="color: ${score.rank <= 3 ? '#667eea' : '#333'}">${score.name}</strong></td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <strong style="color: #43e97b; min-width: 70px;">${score.score} pts</strong>
+                            <div style="flex: 1; background: #e9ecef; border-radius: 10px; height: 6px; overflow: hidden; min-width: 80px;">
+                                <div style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); height: 100%; width: ${scorePercentage}%; transition: width 1s ease;"></div>
+                            </div>
+                        </div>
+                    </td>
+                    <td><span style="color: #667eea; font-weight: 600;">${score.attempts}</span></td>
+                    <td><span style="color: #764ba2; font-weight: 600;">${score.duration}s</span></td>
                 `;
                 });
             }
@@ -832,12 +880,70 @@
                 }
             }
 
+            function displayServerStats(data) {
+                // Afficher les stats du serveur dans une carte dédiée
+                const statsHTML = `
+                    <div class="info-card" style="animation: slideIn 0.5s ease;">
+                        <div class="info-card-title">📊 Statistiques du Serveur</div>
+                        <div class="info-grid">
+                            <div class="info-row">
+                                <div class="info-label">⏱️ Uptime</div>
+                                <div class="info-value">${formatUptime(data.uptime)}</div>
+                            </div>
+                            <div class="info-row">
+                                <div class="info-label">👥 Clients actifs</div>
+                                <div class="info-value">${data.active_clients}</div>
+                            </div>
+                            <div class="info-row">
+                                <div class="info-label">📈 Total servis</div>
+                                <div class="info-value">${data.total_served}</div>
+                            </div>
+                            <div class="info-row">
+                                <div class="info-label">🎮 Parties jouées</div>
+                                <div class="info-value">${data.total_games}</div>
+                            </div>
+                            <div class="info-row">
+                                <div class="info-label">🏆 Meilleur score (essais)</div>
+                                <div class="info-value">${data.best_attempts || "Aucun"}</div>
+                            </div>
+                            <div class="info-row">
+                                <div class="info-label">📊 Moyenne tentatives</div>
+                                <div class="info-value">${data.avg_attempts.toFixed(1)}</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 1rem;">
+                            <div style="background: #e9ecef; border-radius: 10px; height: 8px; overflow: hidden;">
+                                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); height: 100%; width: ${Math.min((data.avg_attempts / 20) * 100, 100)}%; transition: width 0.5s ease;"></div>
+                            </div>
+                            <div style="text-align: center; margin-top: 0.5rem; color: #666; font-size: 0.85rem;">
+                                Performance moyenne
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Insérer avant le chat box
+                const chatBox = document.getElementById("chatBox");
+                const existingStats = document.querySelector(".info-card");
+                if (existingStats) {
+                    existingStats.remove();
+                }
+                chatBox.insertAdjacentHTML("beforebegin", statsHTML);
+            }
+
+            function formatUptime(seconds) {
+                const h = Math.floor(seconds / 3600);
+                const m = Math.floor((seconds % 3600) / 60);
+                const s = seconds % 60;
+                return `${h.toString().padStart(2, "0")}h ${m.toString().padStart(2, "0")}m ${s.toString().padStart(2, "0")}s`;
+            }
+
             function handleJsonMessage(data) {
                 const type = data.type;
 
                 if (type === "stats") {
-                    // Stats serveur (on peut les afficher ou pas)
-                    console.log("Stats:", data);
+                    // Afficher les stats du serveur de manière visuelle
+                    displayServerStats(data);
                 } else if (type === "leaderboard") {
                     displayLeaderboard(data);
                 } else if (type === "prompt") {
@@ -857,6 +963,13 @@
                 } else if (type === "hint") {
                     attempts = data.attempts;
                     document.getElementById("attempts").textContent = attempts;
+
+                    // Animation de pulse sur le compteur de tentatives
+                    const attemptsEl = document.getElementById("attempts");
+                    attemptsEl.style.animation = "none";
+                    setTimeout(() => {
+                        attemptsEl.style.animation = "pulse 0.5s ease";
+                    }, 10);
 
                     const direction =
                         data.direction === "grand"

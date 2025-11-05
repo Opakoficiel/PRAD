@@ -136,8 +136,6 @@ int validate_name(const char *name);
 void update_stats(int attempts);
 int calculate_score(int attempts, int duration);
 void add_to_leaderboard(const char *name, int attempts, int duration, int score);
-void display_server_stats(int socket);
-void display_leaderboard(int socket);
 void send_json_stats(int socket);
 void send_json_leaderboard(int socket);
 void send_json_prompt(int socket, const char *message);
@@ -343,108 +341,9 @@ void add_to_leaderboard(const char *name, int attempts, int duration, int score)
     pthread_mutex_unlock(&leaderboard.mutex);
 }
 
-/**
- * @brief Affiche les statistiques du serveur au client
- * @param socket Socket du client
- */
-void display_server_stats(int socket) {
-    char msg[2048];
-    char buffer[256];
-
-    pthread_mutex_lock(&global_stats.mutex);
-
-    time_t now = time(NULL);
-    int uptime = (int)difftime(now, global_stats.server_start_time);
-    int hours = uptime / 3600;
-    int minutes = (uptime % 3600) / 60;
-    int seconds = uptime % 60;
-
-    snprintf(msg, sizeof(msg),
-        "\n╔═══════════════════════════════════════════════════╗\n"
-        "║        📊 STATISTIQUES DU SERVEUR                 ║\n"
-        "╠═══════════════════════════════════════════════════╣\n");
-
-    snprintf(buffer, sizeof(buffer),
-        "║ ⏱️  Uptime             : %02dh %02dm %02ds              ║\n",
-        hours, minutes, seconds);
-    strcat(msg, buffer);
-
-    snprintf(buffer, sizeof(buffer),
-        "║ 👥 Clients actifs      : %-25d║\n", active_clients);
-    strcat(msg, buffer);
-
-    snprintf(buffer, sizeof(buffer),
-        "║ 📈 Total servis        : %-25d║\n", total_clients_served);
-    strcat(msg, buffer);
-
-    snprintf(buffer, sizeof(buffer),
-        "║ 🎮 Parties jouées      : %-25d║\n", global_stats.total_games);
-    strcat(msg, buffer);
-
-    snprintf(buffer, sizeof(buffer),
-        "║ 🏆 Meilleur (tentatives): %-25d║\n",
-        (global_stats.best_attempts == 999999) ? 0 : global_stats.best_attempts);
-    strcat(msg, buffer);
-
-    snprintf(buffer, sizeof(buffer),
-        "║ 📊 Moyenne tentatives  : %-24.1f║\n", global_stats.avg_attempts);
-    strcat(msg, buffer);
-
-    strcat(msg, "╚═══════════════════════════════════════════════════╝\n");
-
-    pthread_mutex_unlock(&global_stats.mutex);
-
-    send_message(socket, msg);
-}
-
-/**
- * @brief Affiche le leaderboard au client sous forme de tableau élégant
- * @param socket Socket du client
- */
-void display_leaderboard(int socket) {
-    char msg[4096];
-    char buffer[256];
-
-    pthread_mutex_lock(&leaderboard.mutex);
-
-    snprintf(msg, sizeof(msg),
-        "\n╔═══════════════════════════════════════════════════╗\n"
-        "║           🏆 TOP %d MEILLEURS SCORES 🏆            ║\n"
-        "╠═══════════════════════════════════════════════════╣\n"
-        "║  #  │ Joueur     │ Score  │ Essais │ Temps      ║\n"
-        "╠═════╪════════════╪════════╪════════╪════════════╣\n",
-        TOP_SCORES);
-
-    if (leaderboard.count == 0) {
-        strcat(msg,
-            "║              Aucun score enregistré               ║\n");
-    } else {
-        for (int i = 0; i < leaderboard.count; i++) {
-            const char *medal = "   ";
-            if (i == 0) medal = "🥇";
-            else if (i == 1) medal = "🥈";
-            else if (i == 2) medal = "🥉";
-
-            snprintf(buffer, sizeof(buffer),
-                "║ %s │ %-10s │ %6d │ %6d │ %7ds   ║\n",
-                medal,
-                leaderboard.scores[i].name,
-                leaderboard.scores[i].score,
-                leaderboard.scores[i].attempts,
-                leaderboard.scores[i].duration);
-            strcat(msg, buffer);
-        }
-    }
-
-    strcat(msg, "╚═══════════════════════════════════════════════════╝\n");
-
-    pthread_mutex_unlock(&leaderboard.mutex);
-
-    send_message(socket, msg);
-}
-
 /* ============================================================================
- * FONCTIONS D'ENVOI JSON
+ * FONCTIONS D'ENVOI JSON - Le serveur envoie uniquement des données brutes
+ * Les clients (Python et Web) formatent les données selon leurs besoins
  * ============================================================================ */
 
 /**
