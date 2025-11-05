@@ -1,0 +1,616 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <time.h>
+#include <arpa/inet.h>
+#include <signal.h>
+#include <errno.h>
+
+#define PORT 8080
+#define MAX_CLIENTS 30
+#define BUFFER_SIZE 1024
+#define MIN_NUMBER 0
+#define MAX_NUMBER 100
+#define MAX_NAME_LENGTH 50
+#define TOP_SCORES 10
+
+// Structure pour un score
+typedef struct {
+    char name[MAX_NAME_LENGTH];
+    int attempts;
+    int duration;
+    int score;                  // Score calculé
+    time_t timestamp;
+} score_t;
+
+// Structure pour le leaderboard
+typedef struct {
+    score_t scores[TOP_SCORES];
+    int count;
+    pthread_mutex_t mutex;
+} leaderboard_t;
+
+// Structure pour les données du client
+typedef struct {
+    int socket;
+    int client_id;
+    struct sockaddr_in address;
+    int target_number;
+    int attempts;
+    time_t start_time;
+    char name[MAX_NAME_LENGTH];
+    int number_range_min;
+    int number_range_max;
+} client_data_t;
+
+// Variables globales
+int server_socket;
+int active_clients = 0;
+int total_clients_served = 0;
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Statistiques globales
+typedef struct {
+    int total_games;
+    int total_attempts;
+    int best_score;
+    float avg_attempts;
+    time_t server_start_time;
+    pthread_mutex_t stats_mutex;
+} stats_t;
+
+stats_t global_stats = {0, 0, 999, 0.0, 0, PTHREAD_MUTEX_INITIALIZER};
+leaderboard_t leaderboard = {.count = 0, .mutex = PTHREAD_MUTEX_INITIALIZER};
+
+// Fonction pour gérer l'arrêt propre du serveur
+void handle_signal(int sig) {
+    printf("\n[SERVER] Arrêt du serveur...\n");
+    close(server_socket);
+    pthread_mutex_destroy(&clients_mutex);
+    pthread_mutex_destroy(&global_stats.stats_mutex);
+    pthread_mutex_destroy(&leaderboard.mutex);
+    exit(0);
+}
+
+// Fonction pour logger avec timestamp
+void log_message(const char *level, const char *message) {
+    time_t now = time(NULL);
+    char timestamp[26];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    printf("[%s] [%s] %s\n", timestamp, level, message);
+}
+
+// Fonction pour envoyer un message au client
+int send_message(int socket, const char *message) {
+    int len = strlen(message);
+    if (send(socket, message, len, 0) < 0) {
+        perror("Erreur d'envoi");
+        return -1;
+    }
+    return 0;
+}
+
+// Fonction pour recevoir un message du client
+int receive_message(int socket, char *buffer, int size) {
+    memset(buffer, 0, size);
+    int bytes_received = recv(socket, buffer, size - 1, 0);
+    if (bytes_received < 0) {
+        perror("Erreur de réception");
+        return -1;
+    }
+    buffer[strcspn(buffer, "\n")] = 0;
+    buffer[strcspn(buffer, "\r")] = 0;
+    return bytes_received;
+}
+
+// Calculer la plage de nombres en fonction du nombre de clients
+void calculate_number_range(int client_id, int *min, int *max) {
+    // Plage fixe de 0 à 100 pour tous les clients
+    *min = MIN_NUMBER;
+    *max = MAX_NUMBER;
+}
+
+// Mettre à jour les statistiques
+void update_stats(int attempts) {
+    pthread_mutex_lock(&global_stats.stats_mutex);
+    global_stats.total_games++;
+    global_stats.total_attempts += attempts;
+    global_stats.avg_attempts = (float)global_stats.total_attempts / global_stats.total_games;
+    if (attempts < global_stats.best_score) {
+        global_stats.best_score = attempts;
+    }
+    pthread_mutex_unlock(&global_stats.stats_mutex);
+}
+
+// Ajouter un score au leaderboard
+void add_to_leaderboard(const char *name, int attempts, int duration) {
+    pthread_mutex_lock(&leaderboard.mutex);
+
+    score_t new_score;
+    strncpy(new_score.name, name, MAX_NAME_LENGTH - 1);
+    new_score.name[MAX_NAME_LENGTH - 1] = '\0';
+    new_score.attempts = attempts;
+    new_score.duration = duration;
+    new_score.timestamp = time(NULL);
+
+    // Trouver la position d'insertion
+    int insert_pos = -1;
+    for (int i = 0; i < leaderboard.count && i < TOP_SCORES; i++) {
+        if (attempts < leaderboard.scores[i].attempts ||
+            (attempts == leaderboard.scores[i].attempts && duration < leaderboard.scores[i].duration)) {
+            insert_pos = i;
+            break;
+        }
+    }
+
+    // Si pas dans le top mais il y a de la place
+    if (insert_pos == -1 && leaderboard.count < TOP_SCORES) {
+        insert_pos = leaderboard.count;
+    }
+
+    // Insérer le score
+    if (insert_pos != -1) {
+        // Décaler les scores
+        for (int i = (leaderboard.count < TOP_SCORES ? leaderboard.count : TOP_SCORES - 1); i > insert_pos; i--) {
+            leaderboard.scores[i] = leaderboard.scores[i - 1];
+        }
+        leaderboard.scores[insert_pos] = new_score;
+        if (leaderboard.count < TOP_SCORES) {
+            leaderboard.count++;
+        }
+    }
+
+    pthread_mutex_unlock(&leaderboard.mutex);
+}
+
+// Afficher les statistiques du serveur
+void display_server_stats(int socket) {
+    char stats_msg[2048];
+    char buffer[256];
+
+    pthread_mutex_lock(&global_stats.stats_mutex);
+
+    time_t now = time(NULL);
+    int uptime = (int)difftime(now, global_stats.server_start_time);
+    int hours = uptime / 3600;
+    int minutes = (uptime % 3600) / 60;
+    int seconds = uptime % 60;
+
+    snprintf(stats_msg, sizeof(stats_msg),
+             "\n╔════════════════════════════════════════════════════╗\n"
+             "║          STATISTIQUES GLOBALES DU SERVEUR          ║\n"
+             "╠════════════════════════════════════════════════════╣\n");
+
+    snprintf(buffer, sizeof(buffer),
+             "║ Uptime              : %02dh %02dm %02ds                 ║\n",
+             hours, minutes, seconds);
+    strcat(stats_msg, buffer);
+
+    snprintf(buffer, sizeof(buffer),
+             "║ Clients actifs      : %-28d║\n", active_clients);
+    strcat(stats_msg, buffer);
+
+    snprintf(buffer, sizeof(buffer),
+             "║ Total clients servis: %-28d║\n", total_clients_served);
+    strcat(stats_msg, buffer);
+
+    snprintf(buffer, sizeof(buffer),
+             "║ Parties jouées      : %-28d║\n", global_stats.total_games);
+    strcat(stats_msg, buffer);
+
+    snprintf(buffer, sizeof(buffer),
+             "║ Meilleur score      : %-28d║\n",
+             global_stats.best_score == 999 ? 0 : global_stats.best_score);
+    strcat(stats_msg, buffer);
+
+    snprintf(buffer, sizeof(buffer),
+             "║ Moyenne tentatives  : %-27.1f║\n", global_stats.avg_attempts);
+    strcat(stats_msg, buffer);
+
+    strcat(stats_msg, "╚════════════════════════════════════════════════════╝\n");
+
+    pthread_mutex_unlock(&global_stats.stats_mutex);
+
+    send_message(socket, stats_msg);
+}
+
+// Afficher le leaderboard
+void display_leaderboard(int socket) {
+    char leaderboard_msg[4096];
+    char buffer[256];
+
+    pthread_mutex_lock(&leaderboard.mutex);
+
+    snprintf(leaderboard_msg, sizeof(leaderboard_msg),
+             "\n╔════════════════════════════════════════════════════╗\n"
+             "║              🏆 TOP %2d MEILLEURS SCORES 🏆           ║\n"
+             "╠════════════════════════════════════════════════════╣\n"
+             "║ Rang | Nom                | Essais | Temps        ║\n"
+             "╠════════════════════════════════════════════════════╣\n",
+             TOP_SCORES);
+
+    if (leaderboard.count == 0) {
+        strcat(leaderboard_msg,
+               "║              Aucun score enregistré                ║\n");
+    } else {
+        for (int i = 0; i < leaderboard.count; i++) {
+            char medal[10] = "   ";
+            if (i == 0) strcpy(medal, "🥇 ");
+            else if (i == 1) strcpy(medal, "🥈 ");
+            else if (i == 2) strcpy(medal, "🥉 ");
+
+            snprintf(buffer, sizeof(buffer),
+                     "║ %s%2d | %-18s | %6d | %8ds   ║\n",
+                     medal, i + 1,
+                     leaderboard.scores[i].name,
+                     leaderboard.scores[i].attempts,
+                     leaderboard.scores[i].duration);
+            strcat(leaderboard_msg, buffer);
+        }
+    }
+
+    strcat(leaderboard_msg, "╚════════════════════════════════════════════════════╝\n");
+
+    pthread_mutex_unlock(&leaderboard.mutex);
+
+    send_message(socket, leaderboard_msg);
+}
+
+// Demander le nom du joueur
+int get_player_name(int socket, char *name) {
+    char buffer[BUFFER_SIZE];
+
+    send_message(socket, "\n📝 Entrez votre nom (3-10 lettres uniquement): ");
+
+    while (1) {
+        if (receive_message(socket, buffer, BUFFER_SIZE) <= 0) {
+            return -1;
+        }
+
+        // Nettoyer le nom
+        char *trimmed = buffer;
+        while (*trimmed == ' ') trimmed++;
+
+        int len = strlen(trimmed);
+        while (len > 0 && trimmed[len - 1] == ' ') {
+            trimmed[--len] = '\0';
+        }
+
+        // Vérifier longueur
+        if (len < 3) {
+            send_message(socket, "❌ Nom trop court ! (minimum 3 lettres)\n📝 Entrez votre nom: ");
+            continue;
+        }
+
+        if (len > 10) {
+            send_message(socket, "❌ Nom trop long ! (maximum 10 lettres)\n📝 Entrez votre nom: ");
+            continue;
+        }
+
+        // Vérifier que ce sont uniquement des lettres
+        int valid = 1;
+        for (int i = 0; i < len; i++) {
+            if (!((trimmed[i] >= 'a' && trimmed[i] <= 'z') ||
+                  (trimmed[i] >= 'A' && trimmed[i] <= 'Z'))) {
+                valid = 0;
+                break;
+            }
+        }
+
+        if (!valid) {
+            send_message(socket, "❌ Le nom doit contenir uniquement des lettres !\n📝 Entrez votre nom: ");
+            continue;
+        }
+
+        strncpy(name, trimmed, MAX_NAME_LENGTH - 1);
+        name[MAX_NAME_LENGTH - 1] = '\0';
+
+        snprintf(buffer, sizeof(buffer), "✅ Bienvenue %s !\n", name);
+        send_message(socket, buffer);
+        return 0;
+    }
+}
+
+// Thread pour gérer chaque client
+void *handle_client(void *arg) {
+    client_data_t *client = (client_data_t *)arg;
+    char buffer[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
+
+    // Incrémenter les compteurs
+    pthread_mutex_lock(&clients_mutex);
+    active_clients++;
+    total_clients_served++;
+    pthread_mutex_unlock(&clients_mutex);
+
+    // Obtenir l'adresse IP du client
+    char client_ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(client->address.sin_addr), client_ip, INET_ADDRSTRLEN);
+
+    snprintf(buffer, sizeof(buffer),
+             "[CLIENT #%d] Connexion depuis %s:%d",
+             client->client_id, client_ip, ntohs(client->address.sin_port));
+    log_message("INFO", buffer);
+
+    // Message de bienvenue
+    snprintf(response, sizeof(response),
+             "\n╔════════════════════════════════════════════════════╗\n"
+             "║  BIENVENUE AU JEU DE DEVINETTE DISTRIBUÉ !         ║\n"
+             "║            Client #%-2d connecté                      ║\n"
+             "╚════════════════════════════════════════════════════╝\n",
+             client->client_id);
+    send_message(client->socket, response);
+
+    // 1. AFFICHER LES STATISTIQUES DU SERVEUR
+    display_server_stats(client->socket);
+    send_message(client->socket, "\n");
+
+    // 2. AFFICHER LE LEADERBOARD
+    display_leaderboard(client->socket);
+    send_message(client->socket, "\n");
+
+    // 3. DEMANDER LE NOM
+    if (get_player_name(client->socket, client->name) < 0) {
+        log_message("WARNING", "Client déconnecté avant de donner son nom");
+        goto cleanup;
+    }
+
+    snprintf(buffer, sizeof(buffer),
+             "[CLIENT #%d] Joueur: %s", client->client_id, client->name);
+    log_message("INFO", buffer);
+
+    // 4. CALCULER LA PLAGE BASÉE SUR LE NOMBRE DE CLIENTS
+    calculate_number_range(client->client_id, &client->number_range_min, &client->number_range_max);
+
+    // Générer le nombre secret dans cette plage
+    int range = client->number_range_max - client->number_range_min + 1;
+    client->target_number = (rand() % range) + client->number_range_min;
+    client->attempts = 0;
+    client->start_time = time(NULL);
+
+    snprintf(buffer, sizeof(buffer),
+             "[CLIENT #%d] Nombre secret: %d (plage: %d-%d)",
+             client->client_id, client->target_number,
+             client->number_range_min, client->number_range_max);
+    log_message("DEBUG", buffer);
+
+    // Message avec la plage personnalisée
+    snprintf(response, sizeof(response),
+             "\n╔════════════════════════════════════════════════════╗\n"
+             "║               DÉBUT DE LA PARTIE                   ║\n"
+             "╠════════════════════════════════════════════════════╣\n"
+             "║ Joueur: %-43s║\n"
+             "║ Plage de nombres: %d - %-27d║\n"
+             "╚════════════════════════════════════════════════════╝\n\n"
+             "🎯 Devinez le nombre entre %d et %d\n"
+             "💡 Tapez 'quit' pour quitter ou 'stats' pour les statistiques\n\n",
+             client->name,
+             client->number_range_min, client->number_range_max,
+             client->number_range_min, client->number_range_max);
+    send_message(client->socket, response);
+
+    // 5. BOUCLE DE JEU
+    while (1) {
+        if (receive_message(client->socket, buffer, BUFFER_SIZE) <= 0) {
+            log_message("WARNING", "Client déconnecté");
+            break;
+        }
+
+        client->attempts++;
+
+        // Commandes spéciales
+        if (strcasecmp(buffer, "quit") == 0) {
+            send_message(client->socket, "\n👋 Au revoir ! Merci d'avoir joué !\n");
+            break;
+        }
+
+        if (strcasecmp(buffer, "stats") == 0) {
+            display_server_stats(client->socket);
+            display_leaderboard(client->socket);
+            client->attempts--;
+            continue;
+        }
+
+        // Valider l'entrée
+        char *endptr;
+        errno = 0;
+        long guess = strtol(buffer, &endptr, 10);
+
+        if (errno != 0 || *endptr != '\0' || endptr == buffer) {
+            send_message(client->socket,
+                        "❌ ERREUR: Entrez un nombre entier valide !\n");
+            client->attempts--;
+            continue;
+        }
+
+        // Vérifier la plage personnalisée
+        if (guess < client->number_range_min || guess > client->number_range_max) {
+            snprintf(response, sizeof(response),
+                    "❌ ERREUR: Le nombre doit être entre %d et %d !\n",
+                    client->number_range_min, client->number_range_max);
+            send_message(client->socket, response);
+            client->attempts--;
+            continue;
+        }
+
+        snprintf(buffer, sizeof(buffer),
+                "[CLIENT #%d - %s] Tentative %d: %ld (cible: %d)",
+                client->client_id, client->name, client->attempts, guess, client->target_number);
+        log_message("INFO", buffer);
+
+        // Comparer avec le nombre cible
+        if (guess > client->target_number) {
+            snprintf(response, sizeof(response),
+                    "📉 Grand ! (Tentative %d)\n", client->attempts);
+            send_message(client->socket, response);
+        } else if (guess < client->target_number) {
+            snprintf(response, sizeof(response),
+                    "📈 Petit ! (Tentative %d)\n", client->attempts);
+            send_message(client->socket, response);
+        } else {
+            // VICTOIRE !
+            time_t end_time = time(NULL);
+            int duration = (int)difftime(end_time, client->start_time);
+
+            snprintf(response, sizeof(response),
+                    "\n╔════════════════════════════════════════════════════╗\n"
+                    "║              🎉 FÉLICITATIONS ! 🎉                 ║\n"
+                    "╠════════════════════════════════════════════════════╣\n"
+                    "║ Joueur          : %-32s║\n"
+                    "║ Nombre trouvé   : %-32d║\n"
+                    "║ Tentatives      : %-32d║\n"
+                    "║ Temps écoulé    : %-28d s ║\n"
+                    "║ Plage utilisée  : %d - %-27d║\n"
+                    "╚════════════════════════════════════════════════════╝\n",
+                    client->name, client->target_number, client->attempts,
+                    duration, client->number_range_min, client->number_range_max);
+            send_message(client->socket, response);
+
+            // Mettre à jour les stats
+            update_stats(client->attempts);
+            add_to_leaderboard(client->name, client->attempts, duration);
+
+            // Afficher le nouveau leaderboard
+            send_message(client->socket, "\n");
+            display_leaderboard(client->socket);
+
+            snprintf(buffer, sizeof(buffer),
+                    "[CLIENT #%d - %s] VICTOIRE en %d tentatives (%ds) - Plage: %d-%d",
+                    client->client_id, client->name, client->attempts, duration,
+                    client->number_range_min, client->number_range_max);
+            log_message("SUCCESS", buffer);
+            break;
+        }
+    }
+
+cleanup:
+    // Nettoyage
+    snprintf(buffer, sizeof(buffer),
+            "[CLIENT #%d - %s] Déconnexion", client->client_id,
+            client->name[0] ? client->name : "Anonyme");
+    log_message("INFO", buffer);
+
+    close(client->socket);
+
+    pthread_mutex_lock(&clients_mutex);
+    active_clients--;
+    pthread_mutex_unlock(&clients_mutex);
+
+    free(client);
+    pthread_exit(NULL);
+}
+
+int main() {
+    struct sockaddr_in server_addr, client_addr;
+    socklen_t client_len = sizeof(client_addr);
+    int client_counter = 0;
+
+    // Initialiser le générateur aléatoire
+    srand(time(NULL));
+    global_stats.server_start_time = time(NULL);
+
+    // Gérer les signaux
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
+
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════╗\n");
+    printf("║   SERVEUR DE JEU DE DEVINETTE MULTI-THREADÉ v2.0    ║\n");
+    printf("║          Architecture Client-Serveur Avancée         ║\n");
+    printf("╚══════════════════════════════════════════════════════╝\n\n");
+
+    // Créer le socket
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket < 0) {
+        perror("Erreur de création du socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Permettre la réutilisation du port
+    int opt = 1;
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("Erreur setsockopt");
+        exit(EXIT_FAILURE);
+    }
+
+    // Configurer l'adresse
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(PORT);
+
+    // Lier le socket
+    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Erreur de liaison");
+        close(server_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    // Écouter
+    if (listen(server_socket, MAX_CLIENTS) < 0) {
+        perror("Erreur d'écoute");
+        close(server_socket);
+        exit(EXIT_FAILURE);
+    }
+
+    log_message("SUCCESS", "Serveur démarré !");
+    printf("📡 Port : %d\n", PORT);
+    printf("👥 Clients maximum : %d\n", MAX_CLIENTS);
+    printf("🏆 Top scores enregistrés : %d\n", TOP_SCORES);
+    printf("🎯 Plage dynamique : OUI (selon nombre de clients)\n\n");
+    log_message("INFO", "En attente de connexions...");
+
+    // Boucle principale
+    while (1) {
+        client_data_t *client = malloc(sizeof(client_data_t));
+        if (!client) {
+            log_message("ERROR", "Erreur d'allocation mémoire");
+            continue;
+        }
+
+        memset(client, 0, sizeof(client_data_t));
+
+        client->socket = accept(server_socket,
+                               (struct sockaddr *)&client->address,
+                               &client_len);
+
+        if (client->socket < 0) {
+            perror("Erreur d'acceptation");
+            free(client);
+            continue;
+        }
+
+        client->client_id = ++client_counter;
+
+        // Vérifier le nombre max de clients
+        pthread_mutex_lock(&clients_mutex);
+        int current_clients = active_clients;
+        pthread_mutex_unlock(&clients_mutex);
+
+        if (current_clients >= MAX_CLIENTS) {
+            log_message("WARNING", "Nombre maximum de clients atteint");
+            send_message(client->socket,
+                        "⛔ Serveur plein ! Nombre maximum de clients atteint.\n"
+                        "Réessayez dans quelques instants.\n");
+            close(client->socket);
+            free(client);
+            continue;
+        }
+
+        // Créer un thread
+        pthread_t thread_id;
+        if (pthread_create(&thread_id, NULL, handle_client, (void *)client) != 0) {
+            log_message("ERROR", "Erreur de création du thread");
+            close(client->socket);
+            free(client);
+            continue;
+        }
+
+        pthread_detach(thread_id);
+    }
+
+    close(server_socket);
+    return 0;
+}

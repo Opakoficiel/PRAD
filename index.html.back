@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="fr">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Jeu de Devinette v2.0</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap");
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: "Space Grotesk", sans-serif;
+                background: linear-gradient(
+                    135deg,
+                    #0a0e27 0%,
+                    #1a1f3a 50%,
+                    #2a1f3a 100%
+                );
+                color: #fff;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }
+
+            .container {
+                max-width: 800px;
+                width: 100%;
+            }
+
+            .card {
+                background: rgba(255, 255, 255, 0.03);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 24px;
+                padding: 40px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            }
+
+            h1 {
+                text-align: center;
+                font-size: 2.5em;
+                font-weight: 700;
+                background: linear-gradient(
+                    135deg,
+                    #667eea 0%,
+                    #764ba2 50%,
+                    #f093fb 100%
+                );
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                margin-bottom: 10px;
+            }
+
+            .subtitle {
+                text-align: center;
+                color: #a0aec0;
+                margin-bottom: 30px;
+            }
+
+            .prize-banner {
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                padding: 20px;
+                border-radius: 16px;
+                text-align: center;
+                margin-bottom: 30px;
+                font-weight: 600;
+                font-size: 1.2em;
+            }
+
+            .info-table {
+                width: 100%;
+                margin-bottom: 25px;
+                border-collapse: separate;
+                border-spacing: 0;
+                background: rgba(255, 255, 255, 0.02);
+                border-radius: 12px;
+                overflow: hidden;
+            }
+
+            .info-table td {
+                padding: 15px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            }
+
+            .info-table tr:last-child td {
+                border-bottom: none;
+            }
+
+            .info-table td:first-child {
+                color: #a0aec0;
+                width: 40%;
+            }
+
+            .info-table td:last-child {
+                color: #fff;
+                font-weight: 600;
+            }
+
+            .input-group {
+                margin-bottom: 20px;
+            }
+
+            .input-group label {
+                display: block;
+                margin-bottom: 8px;
+                color: #a0aec0;
+                font-size: 0.9em;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+
+            .input-group input {
+                width: 100%;
+                padding: 14px 18px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 2px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                color: #fff;
+                font-size: 1em;
+                font-family: "Space Grotesk", sans-serif;
+                transition: all 0.3s;
+            }
+
+            .input-group input:focus {
+                outline: none;
+                border-color: #667eea;
+                background: rgba(255, 255, 255, 0.08);
+            }
+
+            .btn {
+                width: 100%;
+                padding: 16px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border: none;
+                border-radius: 12px;
+                color: white;
+                font-size: 1em;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+
+            .btn:hover:not(:disabled) {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+            }
+
+            .btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            .btn-secondary {
+                background: linear-gradient(135deg, #f56565 0%, #c53030 100%);
+                margin-top: 15px;
+            }
+
+            .btn-retry {
+                background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+                margin-top: 15px;
+            }
+
+            .game-section {
+                display: none;
+            }
+
+            .game-section.active {
+                display: block;
+            }
+
+            .status {
+                text-align: center;
+                padding: 12px;
+                border-radius: 12px;
+                margin-bottom: 25px;
+                font-weight: 600;
+            }
+
+            .status.connected {
+                background: rgba(72, 187, 120, 0.2);
+                border: 2px solid #48bb78;
+                color: #48bb78;
+            }
+
+            .status.connecting {
+                background: rgba(237, 137, 54, 0.2);
+                border: 2px solid #ed8936;
+                color: #ed8936;
+            }
+
+            .stats-table {
+                width: 100%;
+                margin-bottom: 25px;
+                border-collapse: separate;
+                border-spacing: 0;
+            }
+
+            .stats-table td {
+                padding: 20px;
+                text-align: center;
+                background: rgba(255, 255, 255, 0.03);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+
+            .stats-table td:first-child {
+                border-radius: 12px 0 0 12px;
+            }
+
+            .stats-table td:last-child {
+                border-radius: 0 12px 12px 0;
+            }
+
+            .stat-value {
+                font-size: 3em;
+                font-weight: 700;
+                background: linear-gradient(135deg, #667eea 0%, #f093fb 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+
+            .stat-label {
+                color: #a0aec0;
+                font-size: 0.9em;
+                margin-top: 5px;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+
+            .chat-box {
+                background: rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 16px;
+                padding: 20px;
+                height: 400px;
+                overflow-y: auto;
+                margin-bottom: 20px;
+                font-family: "Courier New", monospace;
+                font-size: 0.9em;
+            }
+
+            .chat-box::-webkit-scrollbar {
+                width: 8px;
+            }
+
+            .chat-box::-webkit-scrollbar-track {
+                background: rgba(255, 255, 255, 0.05);
+            }
+
+            .chat-box::-webkit-scrollbar-thumb {
+                background: rgba(102, 126, 234, 0.5);
+                border-radius: 10px;
+            }
+
+            .message {
+                padding: 10px 14px;
+                margin-bottom: 10px;
+                border-radius: 8px;
+                line-height: 1.6;
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+
+            .message.server {
+                background: rgba(66, 153, 225, 0.15);
+                border-left: 3px solid #4299e1;
+            }
+
+            .message.client {
+                background: rgba(159, 122, 234, 0.15);
+                border-left: 3px solid #9f7aea;
+            }
+
+            .message.success {
+                background: rgba(72, 187, 120, 0.15);
+                border-left: 3px solid #48bb78;
+            }
+
+            .message.error {
+                background: rgba(245, 101, 101, 0.15);
+                border-left: 3px solid #f56565;
+            }
+
+            .input-area {
+                display: flex;
+                gap: 12px;
+                margin-bottom: 15px;
+            }
+
+            .input-area input {
+                flex: 1;
+            }
+
+            .input-area button {
+                width: auto;
+                padding: 14px 35px;
+            }
+
+            @keyframes confetti-fall {
+                to {
+                    transform: translateY(100vh) rotate(360deg);
+                    opacity: 0;
+                }
+            }
+
+            @media (max-width: 768px) {
+                h1 {
+                    font-size: 2em;
+                }
+
+                .stats-table {
+                    display: block;
+                }
+
+                .stats-table tr {
+                    display: flex;
+                    gap: 10px;
+                }
+
+                .stats-table td {
+                    flex: 1;
+                    border-radius: 12px !important;
+                }
+
+                .input-area {
+                    flex-direction: column;
+                }
+
+                .input-area button {
+                    width: 100%;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <!-- Section Connexion -->
+            <div id="connectionSection">
+                <div class="card">
+                    <h1>🎮 Jeu de Devinette</h1>
+                    <p class="subtitle">Client Web Standalone v2.0</p>
+
+                    <div class="prize-banner">
+                        🏆 GAGNEZ UN PLAT OFFERT PAR OPAK !
+                    </div>
+
+                    <table class="info-table">
+                        <tr>
+                            <td>📊 Scoring</td>
+                            <td>10000 - (essais × 100) - temps</td>
+                        </tr>
+                        <tr>
+                            <td>🎯 Plage</td>
+                            <td>0 - 100</td>
+                        </tr>
+                        <tr>
+                            <td>👤 Nom</td>
+                            <td>3-10 lettres uniquement</td>
+                        </tr>
+                    </table>
+
+                    <div class="input-group">
+                        <label>🌐 Adresse IP du Serveur</label>
+                        <input
+                            type="text"
+                            id="wsHost"
+                            placeholder="Ex: 192.168.1.105"
+                        />
+                    </div>
+
+                    <div class="input-group">
+                        <label>🔌 Port WebSocket</label>
+                        <input
+                            type="number"
+                            id="wsPort"
+                            value="8081"
+                            placeholder="8081"
+                        />
+                    </div>
+
+                    <button class="btn" onclick="connectToServer()">
+                        🚀 Se Connecter
+                    </button>
+                </div>
+            </div>
+
+            <!-- Section Jeu -->
+            <div id="gameSection" class="game-section">
+                <div class="card">
+                    <h1>🎮 Jeu de Devinette</h1>
+                    <p class="subtitle">En cours...</p>
+
+                    <div id="status" class="status connecting">
+                        🔄 Connexion en cours...
+                    </div>
+
+                    <table class="stats-table">
+                        <tr>
+                            <td>
+                                <div class="stat-value" id="attempts">0</div>
+                                <div class="stat-label">Tentatives</div>
+                            </td>
+                            <td>
+                                <div class="stat-value" id="timer">0s</div>
+                                <div class="stat-label">Temps</div>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <div class="chat-box" id="chatBox"></div>
+
+                    <div class="input-area">
+                        <input
+                            type="text"
+                            id="messageInput"
+                            placeholder="Votre nombre..."
+                            disabled
+                            autocomplete="off"
+                        />
+                        <button
+                            class="btn"
+                            id="sendBtn"
+                            onclick="sendMessage()"
+                            disabled
+                        >
+                            Envoyer
+                        </button>
+                    </div>
+
+                    <button
+                        class="btn btn-retry"
+                        id="retryBtn"
+                        onclick="retry()"
+                        style="display: none"
+                    >
+                        🔄 Rejouer avec le même nom
+                    </button>
+
+                    <button
+                        class="btn btn-secondary"
+                        id="disconnectBtn"
+                        onclick="disconnect()"
+                        disabled
+                    >
+                        Déconnecter
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // Variables globales
+            let ws = null;
+            let attempts = 0;
+            let startTime = null;
+            let timerInterval = null;
+            let isConnected = false;
+            let gameStarted = false;
+            let playerName = "";
+            let serverHost = "";
+            let serverPort = 8081;
+            let messageQueue = [];
+            let processingQueue = false;
+
+            // Gestion des messages
+            function addMessage(text, type = "server") {
+                const chatBox = document.getElementById("chatBox");
+                const message = document.createElement("div");
+                message.className = `message ${type}`;
+                message.textContent = text;
+                chatBox.appendChild(message);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            }
+
+            function updateStatus(text, type) {
+                const status = document.getElementById("status");
+                status.className = `status ${type}`;
+                status.textContent = text;
+            }
+
+            function startTimer() {
+                if (timerInterval) clearInterval(timerInterval);
+                startTime = Date.now();
+                timerInterval = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                    document.getElementById("timer").textContent =
+                        elapsed + "s";
+                }, 1000);
+            }
+
+            function stopTimer() {
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+            }
+
+            function processMessageQueue() {
+                if (!processingQueue && messageQueue.length > 0) {
+                    processingQueue = true;
+                    const msg = messageQueue.shift();
+
+                    addMessage(msg, "server");
+
+                    if (msg.includes("DÉBUT DE LA PARTIE") && !gameStarted) {
+                        gameStarted = true;
+                        startTimer();
+                        attempts = 0;
+                        document.getElementById("attempts").textContent = "0";
+                    }
+
+                    if (msg.includes("Grand") || msg.includes("Petit")) {
+                        attempts++;
+                        document.getElementById("attempts").textContent =
+                            attempts;
+                    }
+
+                    if (
+                        msg.includes("FÉLICITATIONS") ||
+                        msg.includes("🎉") ||
+                        msg.includes("BRAVO")
+                    ) {
+                        stopTimer();
+                        gameStarted = false;
+                        document.getElementById("messageInput").disabled = true;
+                        document.getElementById("sendBtn").disabled = true;
+
+                        setTimeout(() => {
+                            celebrate();
+                            document.getElementById("retryBtn").style.display =
+                                "block";
+                        }, 1000);
+                    }
+
+                    processingQueue = false;
+                    if (messageQueue.length > 0) {
+                        setTimeout(processMessageQueue, 10);
+                    }
+                }
+            }
+
+            function connectToServer() {
+                serverHost = document.getElementById("wsHost").value.trim();
+                serverPort = document.getElementById("wsPort").value.trim();
+
+                if (!serverHost || !serverPort) {
+                    alert("Veuillez remplir tous les champs");
+                    return;
+                }
+
+                const wsUrl = `ws://${serverHost}:${serverPort}`;
+
+                try {
+                    ws = new WebSocket(wsUrl);
+
+                    ws.onopen = () => {
+                        isConnected = true;
+                        updateStatus("✅ Connecté", "connected");
+
+                        document.getElementById(
+                            "connectionSection",
+                        ).style.display = "none";
+                        document
+                            .getElementById("gameSection")
+                            .classList.add("active");
+                        document.getElementById("messageInput").disabled =
+                            false;
+                        document.getElementById("sendBtn").disabled = false;
+                        document.getElementById("disconnectBtn").disabled =
+                            false;
+                        document.getElementById("messageInput").focus();
+                    };
+
+                    ws.onmessage = (event) => {
+                        messageQueue.push(event.data);
+                        processMessageQueue();
+                    };
+
+                    ws.onerror = () => {
+                        addMessage("❌ Erreur de connexion", "error");
+                        updateStatus("❌ Erreur", "connecting");
+                    };
+
+                    ws.onclose = () => {
+                        isConnected = false;
+                        stopTimer();
+
+                        setTimeout(() => {
+                            if (!gameStarted) {
+                                addMessage("✅ Partie terminée", "success");
+                            }
+                        }, 500);
+
+                        updateStatus("⚠️ Déconnecté", "connecting");
+                        document.getElementById("messageInput").disabled = true;
+                        document.getElementById("sendBtn").disabled = true;
+                        document.getElementById("disconnectBtn").disabled =
+                            true;
+                    };
+                } catch (error) {
+                    addMessage("❌ Erreur: " + error.message, "error");
+                }
+            }
+
+            function sendMessage() {
+                const input = document.getElementById("messageInput");
+                const message = input.value.trim();
+
+                if (
+                    !message ||
+                    !isConnected ||
+                    ws.readyState !== WebSocket.OPEN
+                )
+                    return;
+
+                addMessage(`➤ ${message}`, "client");
+                ws.send(message);
+
+                if (
+                    !playerName &&
+                    message.length >= 3 &&
+                    message.length <= 10 &&
+                    /^[a-zA-Z]+$/.test(message)
+                ) {
+                    playerName = message;
+                }
+
+                input.value = "";
+                input.focus();
+            }
+
+            function retry() {
+                if (!playerName) return;
+
+                document.getElementById("retryBtn").style.display = "none";
+                document.getElementById("chatBox").innerHTML = "";
+                attempts = 0;
+                document.getElementById("attempts").textContent = "0";
+                document.getElementById("timer").textContent = "0s";
+                gameStarted = false;
+
+                disconnect();
+
+                setTimeout(() => {
+                    connectToServer();
+                    setTimeout(() => {
+                        if (isConnected && ws.readyState === WebSocket.OPEN) {
+                            ws.send(playerName);
+                        }
+                    }, 2000);
+                }, 1000);
+            }
+
+            function disconnect() {
+                if (ws && isConnected) {
+                    ws.close(1000);
+                }
+            }
+
+            function celebrate() {
+                const colors = [
+                    "#667eea",
+                    "#764ba2",
+                    "#f093fb",
+                    "#f5576c",
+                    "#4facfe",
+                ];
+                for (let i = 0; i < 100; i++) {
+                    setTimeout(() => {
+                        const confetti = document.createElement("div");
+                        confetti.style.position = "fixed";
+                        confetti.style.width = "10px";
+                        confetti.style.height = "10px";
+                        confetti.style.left = Math.random() * 100 + "%";
+                        confetti.style.top = "-10px";
+                        confetti.style.backgroundColor =
+                            colors[Math.floor(Math.random() * colors.length)];
+                        confetti.style.animation = "confetti-fall 3s linear";
+                        confetti.style.zIndex = "9999";
+                        document.body.appendChild(confetti);
+                        setTimeout(() => confetti.remove(), 3000);
+                    }, i * 30);
+                }
+            }
+
+            document
+                .getElementById("messageInput")
+                .addEventListener("keypress", (e) => {
+                    if (e.key === "Enter") sendMessage();
+                });
+        </script>
+    </body>
+</html>

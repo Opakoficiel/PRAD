@@ -1,0 +1,12 @@
+Je remarque encore beaucoup d'imperfections.
+
+*Déjà corrige dans les codes des différents client, c'est 3 caractères minimum(ms c'est écrit 2)!
+*Ensuite je pense qu'il y a trop d'information inutiles dans la page web
+*Le bravo ne s'affiche toujour pas côté index.html
+*Aussi j'aimerais qu'après avoir fini de jouer, on ait une option 'réessayer' qui nous recoonecte au server avec le même nom
+*Je passe aussi que les traits des interfaces ne sont pas beaux. Des tableaux ou autres auraient été pluys beaux!
+*Je ne vois pas l'utilité de la bar de progression sur la page web!
+
+Corrige toutes les petites imperfections, donne du code optimisé, documenté et propre!
+NB : N'oublie pas que seuls les fichiers server.c et proxy-server.js seront stockés sur mon ordinateur pedant que index.html et client.python seront stocké sur l'ordinateur de mon partenaire!
+J'espère que tu donneras quelque chose de sérieux cette fois!

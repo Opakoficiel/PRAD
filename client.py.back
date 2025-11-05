@@ -1,0 +1,367 @@
+#!/usr/bin/env python3
+"""
+Client Python Ultra-Moderne pour le jeu de devinette distribué
+Version Standalone - À distribuer aux participants
+Auteur: Opak - ESATIC 2025
+
+Usage: python3 client.py <IP_SERVEUR> [PORT]
+Exemple: python3 client.py 192.168.1.105 8080
+"""
+
+import socket
+import sys
+import signal
+import time
+from typing import Optional
+
+# Configuration
+DEFAULT_PORT = 8080
+BUFFER_SIZE = 8192
+
+class Style:
+    """Styles ANSI pour terminal"""
+    PRIMARY = '\033[38;5;141m'      # Purple
+    SUCCESS = '\033[38;5;156m'      # Green
+    WARNING = '\033[38;5;221m'      # Yellow
+    ERROR = '\033[38;5;204m'        # Red
+    INFO = '\033[38;5;117m'         # Cyan
+    MUTED = '\033[38;5;246m'        # Gray
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+
+    # Symboles
+    ARROW = '→'
+    CHECK = '✓'
+    CROSS = '✗'
+
+def clear_screen():
+    """Efface l'écran"""
+    print('\033[2J\033[H', end='')
+
+def animate_loading(text, duration=1.5):
+    """Animation de chargement avec spinner"""
+    frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    end_time = time.time() + duration
+    i = 0
+    while time.time() < end_time:
+        frame = frames[i % len(frames)]
+        print(f'\r{Style.INFO}{frame}{Style.RESET} {text}', end='', flush=True)
+        time.sleep(0.08)
+        i += 1
+    print(f'\r{Style.SUCCESS}{Style.CHECK}{Style.RESET} {text}')
+
+def print_banner():
+    """Bannière moderne"""
+    clear_screen()
+    banner = f"""
+{Style.PRIMARY}{Style.BOLD}
+    ╔═══════════════════════════════════════════════════════╗
+    ║                                                       ║
+    ║           🎮  JEU DE DEVINETTE v2.0  🎮              ║
+    ║                                                       ║
+    ║              Client Python Standalone                 ║
+    ║                                                       ║
+    ╚═══════════════════════════════════════════════════════╝
+{Style.RESET}
+"""
+    print(banner)
+
+def print_box(content, color=Style.INFO):
+    """Affiche une boîte d'information"""
+    width = 58
+    print(f"\n{color}╔{'═' * width}╗{Style.RESET}")
+    for line in content.split('\n'):
+        print(f"{color}║{Style.RESET} {line:<{width-2}} {color}║{Style.RESET}")
+    print(f"{color}╚{'═' * width}╝{Style.RESET}\n")
+
+class GameClient:
+    """Client de jeu principal"""
+
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+        self.socket: Optional[socket.socket] = None
+        self.connected = False
+        self.player_name = ""
+
+    def connect(self) -> bool:
+        """Connexion au serveur"""
+        try:
+            animate_loading(f"Connexion à {self.host}:{self.port}")
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.settimeout(30)
+            self.socket.connect((self.host, self.port))
+            self.connected = True
+            print(f"{Style.SUCCESS}{Style.CHECK} Connecté avec succès !{Style.RESET}\n")
+            return True
+        except ConnectionRefusedError:
+            print(f"\n{Style.ERROR}{Style.CROSS} Le serveur refuse la connexion{Style.RESET}")
+            print(f"{Style.MUTED}Vérifiez que le serveur est démarré{Style.RESET}\n")
+            return False
+        except socket.gaierror:
+            print(f"\n{Style.ERROR}{Style.CROSS} Adresse IP invalide{Style.RESET}\n")
+            return False
+        except socket.timeout:
+            print(f"\n{Style.ERROR}{Style.CROSS} Timeout de connexion{Style.RESET}\n")
+            return False
+        except Exception as e:
+            print(f"\n{Style.ERROR}{Style.CROSS} Erreur: {e}{Style.RESET}\n")
+            return False
+
+    def send_message(self, message: str) -> bool:
+        """Envoie un message au serveur"""
+        try:
+            self.socket.sendall(message.encode('utf-8'))
+            return True
+        except:
+            return False
+
+    def receive_message(self, timeout: Optional[float] = None) -> Optional[str]:
+        """Reçoit un message du serveur"""
+        try:
+            if timeout:
+                old_timeout = self.socket.gettimeout()
+                self.socket.settimeout(timeout)
+
+            data = self.socket.recv(BUFFER_SIZE)
+
+            if timeout:
+                self.socket.settimeout(old_timeout)
+
+            return data.decode('utf-8') if data else None
+        except:
+            return None
+
+    def receive_all(self, initial_timeout: float = 2.0) -> str:
+        """Reçoit tous les messages disponibles avec buffer"""
+        all_data = ""
+        data = self.receive_message(timeout=initial_timeout)
+        if data:
+            all_data += data
+            while True:
+                data = self.receive_message(timeout=0.5)
+                if not data:
+                    break
+                all_data += data
+        return all_data
+
+    def print_server_message(self, message: str):
+        """Affiche les messages du serveur avec style"""
+        lines = message.split('\n')
+        for line in lines:
+            if '🏆' in line or 'FÉLICITATIONS' in line or 'BRAVO' in line:
+                print(f"{Style.SUCCESS}{Style.BOLD}{line}{Style.RESET}")
+            elif '❌' in line or 'ERREUR' in line:
+                print(f"{Style.ERROR}{line}{Style.RESET}")
+            elif '📊' in line or 'SCORE' in line:
+                print(f"{Style.WARNING}{Style.BOLD}{line}{Style.RESET}")
+            elif '╔' in line or '║' in line or '╚' in line or '╠' in line or '═' in line:
+                print(f"{Style.PRIMARY}{line}{Style.RESET}")
+            elif '🥇' in line:
+                print(f"{Style.WARNING}{Style.BOLD}{line}{Style.RESET}")
+            elif '🥈' in line or '🥉' in line:
+                print(f"{Style.INFO}{line}{Style.RESET}")
+            elif line.strip():
+                print(f"{Style.MUTED}{line}{Style.RESET}")
+
+    def get_input(self, prompt: str = "") -> str:
+        """Demande une entrée utilisateur avec style"""
+        return input(f"{Style.PRIMARY}{Style.ARROW}{Style.RESET} {prompt}").strip()
+
+    def enter_name(self) -> bool:
+        """Phase de saisie du nom avec validation"""
+        while True:
+            prompt_msg = self.receive_message(timeout=5.0)
+            if prompt_msg:
+                self.print_server_message(prompt_msg)
+
+            try:
+                name = self.get_input("")
+
+                # Validation locale
+                if len(name) < 3:
+                    print(f"{Style.ERROR}{Style.CROSS} Nom trop court (minimum 3 lettres){Style.RESET}")
+                    continue
+                if len(name) > 10:
+                    print(f"{Style.ERROR}{Style.CROSS} Nom trop long (maximum 10 lettres){Style.RESET}")
+                    continue
+                if not name.isalpha():
+                    print(f"{Style.ERROR}{Style.CROSS} Uniquement des lettres (a-z, A-Z){Style.RESET}")
+                    continue
+
+                # Envoi au serveur
+                if not self.send_message(f"{name}\n"):
+                    return False
+
+                response = self.receive_message(timeout=5.0)
+                if response:
+                    self.print_server_message(response)
+                    if "Bienvenue" in response or "✅" in response:
+                        self.player_name = name
+                        return True
+            except (KeyboardInterrupt, EOFError):
+                return False
+
+    def play_game(self) -> bool:
+        """Boucle de jeu principale"""
+        # Recevoir info de début
+        game_start = self.receive_all(initial_timeout=2.0)
+        if game_start:
+            self.print_server_message(game_start)
+
+        print(f"\n{Style.INFO}💡 Commandes:{Style.RESET}")
+        print(f"{Style.MUTED}   • Tapez un nombre pour deviner{Style.RESET}")
+        print(f"{Style.MUTED}   • 'stats' pour voir les statistiques{Style.RESET}")
+        print(f"{Style.MUTED}   • 'quit' pour quitter{Style.RESET}\n")
+
+        while self.connected:
+            try:
+                user_input = self.get_input("")
+
+                if not user_input:
+                    continue
+
+                # Commandes spéciales
+                if user_input.lower() in ['quit', 'q', 'exit']:
+                    self.send_message('quit\n')
+                    response = self.receive_message(timeout=2.0)
+                    if response:
+                        self.print_server_message(response)
+                    return False
+
+                if user_input.lower() in ['stats', 's']:
+                    self.send_message('stats\n')
+                    response = self.receive_all()
+                    if response:
+                        self.print_server_message(response)
+                    continue
+
+                # Envoi au serveur
+                if not self.send_message(f"{user_input}\n"):
+                    return False
+
+                # Réponse
+                response = self.receive_all(initial_timeout=2.0)
+                if not response:
+                    print(f"{Style.ERROR}{Style.CROSS} Connexion perdue{Style.RESET}")
+                    return False
+
+                self.print_server_message(response)
+
+                # Détection victoire
+                if "FÉLICITATIONS" in response or "🎉" in response or "BRAVO" in response:
+                    self.animate_victory()
+                    return self.ask_retry()
+
+            except (KeyboardInterrupt, EOFError):
+                print(f"\n{Style.WARNING}Interruption{Style.RESET}")
+                self.send_message('quit\n')
+                return False
+
+    def animate_victory(self):
+        """Animation de victoire"""
+        print(f"\n{Style.SUCCESS}{Style.BOLD}")
+        print("    ╔═══════════════════════════════════════╗")
+        print("    ║                                       ║")
+        print("    ║          🎉 VICTOIRE ! 🎉           ║")
+        print("    ║                                       ║")
+        print("    ╚═══════════════════════════════════════╝")
+        print(f"{Style.RESET}\n")
+        time.sleep(1)
+
+    def ask_retry(self) -> bool:
+        """Demande si l'utilisateur veut rejouer"""
+        print(f"\n{Style.WARNING}Voulez-vous rejouer avec le même nom ? (o/n){Style.RESET}")
+        choice = self.get_input("").lower()
+        return choice in ['o', 'oui', 'y', 'yes']
+
+    def run(self):
+        """Exécution complète avec retry"""
+        print_box(
+            "🏆 GAGNEZ UN PLAT OFFERT PAR OPAK !\n"
+            "📊 Score = 10000 - (essais × 100) - temps\n"
+            "🎯 Plage: 0-100 | Nom: 3-10 lettres uniquement",
+            Style.WARNING
+        )
+
+        # Connexion
+        if not self.connect():
+            return False
+
+        # Première partie : recevoir stats et entrer nom
+        welcome_data = self.receive_all(initial_timeout=3.0)
+        if welcome_data:
+            self.print_server_message(welcome_data)
+
+        if not self.enter_name():
+            return False
+
+        # Boucle de jeu avec retry
+        while True:
+            retry = self.play_game()
+            if not retry:
+                break
+
+            # Reconnexion pour nouvelle partie
+            print(f"\n{Style.INFO}Reconnexion au serveur...{Style.RESET}\n")
+            self.disconnect()
+            time.sleep(1)
+
+            if not self.connect():
+                break
+
+            # Reutiliser le même nom
+            welcome_data = self.receive_all(initial_timeout=3.0)
+            if welcome_data:
+                self.print_server_message(welcome_data)
+
+            # Envoyer le nom automatiquement
+            self.send_message(f"{self.player_name}\n")
+            response = self.receive_message(timeout=5.0)
+            if response:
+                self.print_server_message(response)
+
+        return True
+
+    def disconnect(self):
+        """Déconnexion propre"""
+        if self.socket:
+            try:
+                self.socket.close()
+            except:
+                pass
+        self.connected = False
+
+def signal_handler(signum, frame):
+    """Gestion CTRL+C"""
+    print(f"\n{Style.WARNING}Signal reçu, fermeture...{Style.RESET}")
+    sys.exit(0)
+
+def main():
+    """Point d'entrée principal"""
+    signal.signal(signal.SIGINT, signal_handler)
+
+    print_banner()
+
+    # Vérifier arguments
+    if len(sys.argv) < 2:
+        print(f"{Style.ERROR}Usage: python3 client.py <IP_SERVEUR> [PORT]{Style.RESET}")
+        print(f"{Style.INFO}Exemple: python3 client.py 192.168.1.105 8080{Style.RESET}\n")
+        sys.exit(1)
+
+    host = sys.argv[1]
+    port = int(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_PORT
+
+    # Lancer le client
+    client = GameClient(host, port)
+
+    try:
+        client.run()
+    except Exception as e:
+        print(f"{Style.ERROR}{Style.CROSS} Erreur: {e}{Style.RESET}")
+    finally:
+        client.disconnect()
+        print(f"\n{Style.PRIMARY}{Style.BOLD}Merci d'avoir joué ! À bientôt 👋{Style.RESET}\n")
+
+if __name__ == "__main__":
+    main()
