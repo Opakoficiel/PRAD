@@ -138,6 +138,15 @@ int calculate_score(int attempts, int duration);
 void add_to_leaderboard(const char *name, int attempts, int duration, int score);
 void display_server_stats(int socket);
 void display_leaderboard(int socket);
+void send_json_stats(int socket);
+void send_json_leaderboard(int socket);
+void send_json_prompt(int socket, const char *message);
+void send_json_name_accepted(int socket, const char *name);
+void send_json_game_start(int socket, const char *player, int min, int max);
+void send_json_hint(int socket, const char *direction, int attempts);
+void send_json_victory(int socket, const char *player, int number, int attempts, int duration, int score);
+void send_json_error(int socket, const char *message);
+void send_json_bye(int socket, const char *message);
 void *handle_client(void *arg);
 
 /* ============================================================================
@@ -434,6 +443,173 @@ void display_leaderboard(int socket) {
     send_message(socket, msg);
 }
 
+/* ============================================================================
+ * FONCTIONS D'ENVOI JSON
+ * ============================================================================ */
+
+/**
+ * @brief Envoie les statistiques du serveur au format JSON
+ * @param socket Socket du client
+ */
+void send_json_stats(int socket) {
+    char json[2048];
+
+    pthread_mutex_lock(&global_stats.mutex);
+
+    time_t now = time(NULL);
+    int uptime = (int)difftime(now, global_stats.server_start_time);
+
+    snprintf(json, sizeof(json),
+        "{\"type\":\"stats\","
+        "\"uptime\":%d,"
+        "\"active_clients\":%d,"
+        "\"total_served\":%d,"
+        "\"total_games\":%d,"
+        "\"best_attempts\":%d,"
+        "\"avg_attempts\":%.1f}\n",
+        uptime,
+        active_clients,
+        total_clients_served,
+        global_stats.total_games,
+        (global_stats.best_attempts == 999999) ? 0 : global_stats.best_attempts,
+        global_stats.avg_attempts);
+
+    pthread_mutex_unlock(&global_stats.mutex);
+
+    send_message(socket, json);
+}
+
+/**
+ * @brief Envoie le leaderboard au format JSON
+ * @param socket Socket du client
+ */
+void send_json_leaderboard(int socket) {
+    char json[8192];
+    char temp[512];
+
+    pthread_mutex_lock(&leaderboard.mutex);
+
+    snprintf(json, sizeof(json),
+        "{\"type\":\"leaderboard\",\"count\":%d,\"scores\":[",
+        leaderboard.count);
+
+    for (int i = 0; i < leaderboard.count; i++) {
+        snprintf(temp, sizeof(temp),
+            "%s{\"rank\":%d,\"name\":\"%s\",\"score\":%d,\"attempts\":%d,\"duration\":%d}",
+            (i > 0) ? "," : "",
+            i + 1,
+            leaderboard.scores[i].name,
+            leaderboard.scores[i].score,
+            leaderboard.scores[i].attempts,
+            leaderboard.scores[i].duration);
+        strcat(json, temp);
+    }
+
+    strcat(json, "]}\n");
+
+    pthread_mutex_unlock(&leaderboard.mutex);
+
+    send_message(socket, json);
+}
+
+/**
+ * @brief Envoie un prompt JSON
+ * @param socket Socket du client
+ * @param message Message du prompt
+ */
+void send_json_prompt(int socket, const char *message) {
+    char json[1024];
+    snprintf(json, sizeof(json),
+        "{\"type\":\"prompt\",\"message\":\"%s\"}\n",
+        message);
+    send_message(socket, json);
+}
+
+/**
+ * @brief Envoie la confirmation d'acceptation du nom
+ * @param socket Socket du client
+ * @param name Nom accepté
+ */
+void send_json_name_accepted(int socket, const char *name) {
+    char json[256];
+    snprintf(json, sizeof(json),
+        "{\"type\":\"name_accepted\",\"name\":\"%s\"}\n",
+        name);
+    send_message(socket, json);
+}
+
+/**
+ * @brief Envoie le message de début de partie
+ * @param socket Socket du client
+ * @param player Nom du joueur
+ * @param min Borne inférieure
+ * @param max Borne supérieure
+ */
+void send_json_game_start(int socket, const char *player, int min, int max) {
+    char json[512];
+    snprintf(json, sizeof(json),
+        "{\"type\":\"game_start\",\"player\":\"%s\",\"min\":%d,\"max\":%d}\n",
+        player, min, max);
+    send_message(socket, json);
+}
+
+/**
+ * @brief Envoie un indice (grand/petit)
+ * @param socket Socket du client
+ * @param direction "grand" ou "petit"
+ * @param attempts Numéro de la tentative
+ */
+void send_json_hint(int socket, const char *direction, int attempts) {
+    char json[256];
+    snprintf(json, sizeof(json),
+        "{\"type\":\"hint\",\"direction\":\"%s\",\"attempts\":%d}\n",
+        direction, attempts);
+    send_message(socket, json);
+}
+
+/**
+ * @brief Envoie le message de victoire
+ * @param socket Socket du client
+ * @param player Nom du joueur
+ * @param number Nombre trouvé
+ * @param attempts Nombre de tentatives
+ * @param duration Durée en secondes
+ * @param score Score final
+ */
+void send_json_victory(int socket, const char *player, int number, int attempts, int duration, int score) {
+    char json[512];
+    snprintf(json, sizeof(json),
+        "{\"type\":\"victory\",\"player\":\"%s\",\"number\":%d,\"attempts\":%d,\"duration\":%d,\"score\":%d}\n",
+        player, number, attempts, duration, score);
+    send_message(socket, json);
+}
+
+/**
+ * @brief Envoie un message d'erreur JSON
+ * @param socket Socket du client
+ * @param message Message d'erreur
+ */
+void send_json_error(int socket, const char *message) {
+    char json[512];
+    snprintf(json, sizeof(json),
+        "{\"type\":\"error\",\"message\":\"%s\"}\n",
+        message);
+    send_message(socket, json);
+}
+
+/**
+ * @brief Envoie un message d'au revoir JSON
+ * @param socket Socket du client
+ * @param message Message d'au revoir
+ */
+void send_json_bye(int socket, const char *message) {
+    char json[256];
+    snprintf(json, sizeof(json),
+        "{\"type\":\"bye\",\"message\":\"%s\"}\n",
+        message);
+    send_message(socket, json);
+}
+
 /**
  * @brief Fonction principale de gestion d'un client (exécutée dans un thread)
  * @param arg Pointeur vers client_data_t
@@ -466,23 +642,15 @@ void *handle_client(void *arg) {
     log_message("INFO", buffer);
 
     // ========================================================================
-    // ÉTAPE 1: AFFICHER LES STATISTIQUES ET LEADERBOARD
+    // ÉTAPE 1: AFFICHER LES STATISTIQUES ET LEADERBOARD EN JSON
     // ========================================================================
-    display_server_stats(client->socket);
-    display_leaderboard(client->socket);
+    send_json_stats(client->socket);
+    send_json_leaderboard(client->socket);
 
     // ========================================================================
     // ÉTAPE 2: DEMANDER ET VALIDER LE NOM DU JOUEUR
     // ========================================================================
-    send_message(client->socket,
-        "\n╔═══════════════════════════════════════════════════╗\n"
-        "║              🎮 BIENVENUE AU JEU ! 🎮             ║\n"
-        "╠═══════════════════════════════════════════════════╣\n"
-        "║ 🎯 Devinez le nombre entre 0 et 100              ║\n"
-        "║ 🏆 Score = 10000 - (tentatives × 100) - temps    ║\n"
-        "║ 📛 Nom: 3-10 lettres (a-z, A-Z) uniquement       ║\n"
-        "╚═══════════════════════════════════════════════════╝\n\n"
-        "📝 Entrez votre nom (3-10 lettres): ");
+    send_json_prompt(client->socket, "Entrez votre nom (3-10 lettres, a-z uniquement)");
 
     // Boucle de validation du nom
     int name_validated = 0;
@@ -503,26 +671,19 @@ void *handle_client(void *arg) {
             client->name[MAX_NAME_LENGTH - 1] = '\0';
             name_validated = 1;
 
-            snprintf(response, sizeof(response),
-                "✅ Bienvenue %s ! Préparation de votre partie...\n\n", client->name);
-            send_message(client->socket, response);
+            send_json_name_accepted(client->socket, client->name);
 
             snprintf(buffer, sizeof(buffer),
                 "Client #%d: Nom validé '%s'", client->client_id, client->name);
             log_message("SUCCESS", buffer);
         } else {
-            send_message(client->socket,
-                "❌ Nom invalide !\n"
-                "   • Longueur: 3-10 caractères\n"
-                "   • Uniquement des lettres (a-z, A-Z)\n"
-                "   • Pas de chiffres, espaces ou caractères spéciaux\n\n"
-                "📝 Réessayez: ");
+            send_json_error(client->socket,
+                "Nom invalide ! Longueur: 3-10 lettres (a-z, A-Z uniquement)");
         }
     }
 
     if (!name_validated) {
-        send_message(client->socket,
-            "❌ Trop de tentatives invalides. Déconnexion.\n");
+        send_json_error(client->socket, "Trop de tentatives invalides. Deconnexion.");
         goto cleanup;
     }
 
@@ -539,19 +700,7 @@ void *handle_client(void *arg) {
     log_message("INFO", buffer);
 
     // Message de début de partie
-    snprintf(response, sizeof(response),
-        "╔═══════════════════════════════════════════════════╗\n"
-        "║              🎯 DÉBUT DE LA PARTIE                ║\n"
-        "╠═══════════════════════════════════════════════════╣\n"
-        "║ Joueur          : %-31s║\n"
-        "║ Plage           : %d - %-27d║\n"
-        "║ Commandes       : 'stats' | 'quit'               ║\n"
-        "╚═══════════════════════════════════════════════════╝\n\n"
-        "🎲 Devinez le nombre entre %d et %d\n\n",
-        client->name,
-        MIN_NUMBER, MAX_NUMBER,
-        MIN_NUMBER, MAX_NUMBER);
-    send_message(client->socket, response);
+    send_json_game_start(client->socket, client->name, MIN_NUMBER, MAX_NUMBER);
 
     // ========================================================================
     // ÉTAPE 4: BOUCLE DE JEU PRINCIPALE
@@ -566,14 +715,14 @@ void *handle_client(void *arg) {
 
         // Commande QUIT
         if (strcasecmp(buffer, "quit") == 0) {
-            send_message(client->socket, "\n👋 Au revoir ! Merci d'avoir joué\n");
+            send_json_bye(client->socket, "Au revoir ! Merci d'avoir joue");
             break;
         }
 
         // Commande STATS
         if (strcasecmp(buffer, "stats") == 0) {
-            display_server_stats(client->socket);
-            display_leaderboard(client->socket);
+            send_json_stats(client->socket);
+            send_json_leaderboard(client->socket);
             client->attempts--; // Ne pas compter comme tentative
             continue;
         }
@@ -584,7 +733,7 @@ void *handle_client(void *arg) {
         long guess = strtol(buffer, &endptr, 10);
 
         if (errno != 0 || *endptr != '\0' || endptr == buffer) {
-            send_message(client->socket, "❌ Entrez un nombre entier valide\n");
+            send_json_error(client->socket, "Entrez un nombre entier valide");
             client->attempts--;
             continue;
         }
@@ -592,9 +741,9 @@ void *handle_client(void *arg) {
         // Vérification de la plage
         if (guess < MIN_NUMBER || guess > MAX_NUMBER) {
             snprintf(response, sizeof(response),
-                "❌ Le nombre doit être entre %d et %d\n",
+                "Le nombre doit etre entre %d et %d",
                 MIN_NUMBER, MAX_NUMBER);
-            send_message(client->socket, response);
+            send_json_error(client->socket, response);
             client->attempts--;
             continue;
         }
@@ -610,14 +759,10 @@ void *handle_client(void *arg) {
         // COMPARAISON ET RÉPONSE
         // ====================================================================
         if (guess > client->target_number) {
-            snprintf(response, sizeof(response),
-                "📉 Trop grand ! (Tentative #%d)\n", client->attempts);
-            send_message(client->socket, response);
+            send_json_hint(client->socket, "grand", client->attempts);
 
         } else if (guess < client->target_number) {
-            snprintf(response, sizeof(response),
-                "📈 Trop petit ! (Tentative #%d)\n", client->attempts);
-            send_message(client->socket, response);
+            send_json_hint(client->socket, "petit", client->attempts);
 
         } else {
             // ================================================================
@@ -627,34 +772,16 @@ void *handle_client(void *arg) {
             int duration = (int)difftime(end_time, client->start_time);
             int score = calculate_score(client->attempts, duration);
 
-            // Message de victoire avec tableau élégant
-            snprintf(response, sizeof(response),
-                "\n╔═══════════════════════════════════════════════════╗\n"
-                "║              🎉 FÉLICITATIONS ! 🎉                ║\n"
-                "╠═══════════════════════════════════════════════════╣\n"
-                "║ Joueur          : %-31s║\n"
-                "║ Nombre trouvé   : %-31d║\n"
-                "║ Tentatives      : %-31d║\n"
-                "║ Temps écoulé    : %-28ds ║\n"
-                "║ Score final     : %-31d║\n"
-                "╠═══════════════════════════════════════════════════╣\n"
-                "║ Calcul: 10000 - (%d × 100) - %d = %d             ║\n"
-                "╚═══════════════════════════════════════════════════╝\n",
-                client->name,
-                client->target_number,
-                client->attempts,
-                duration,
-                score,
-                client->attempts, duration, score);
-            send_message(client->socket, response);
+            // Message de victoire JSON
+            send_json_victory(client->socket, client->name, client->target_number,
+                            client->attempts, duration, score);
 
             // Mise à jour des statistiques et leaderboard
             update_stats(client->attempts);
             add_to_leaderboard(client->name, client->attempts, duration, score);
 
             // Afficher le nouveau leaderboard
-            send_message(client->socket, "\n");
-            display_leaderboard(client->socket);
+            send_json_leaderboard(client->socket);
 
             // Log de victoire
             snprintf(buffer, sizeof(buffer),
@@ -796,9 +923,8 @@ int main(void) {
 
         if (current >= MAX_CLIENTS) {
             log_message("WARNING", "Nombre maximum de clients atteint");
-            send_message(client->socket,
-                "⛔ Serveur plein ! Maximum de clients atteint.\n"
-                "Veuillez réessayer dans quelques instants.\n");
+            send_json_error(client->socket,
+                "Serveur plein ! Maximum de clients atteint. Reessayez plus tard.");
             close(client->socket);
             free(client);
             continue;
